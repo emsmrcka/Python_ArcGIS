@@ -1,0 +1,104 @@
+#polygons to lines
+def PolygonToLines (inFc, workspace, fcName):
+
+    outFc = UniqueFileName (workspace, fcName)
+    try:
+        #let esri do it (advanced license)
+        arcpy.FeatureToLine_management (inFc, outFc)
+        return outFc
+    except:
+        pass
+    #no advanced license
+    array = arcpy.Array ()
+    sr = arcpy.Describe (inFc).spatialReference
+    outPath, outName = os.path.split (outFc)
+    arcpy.CreateFeatureclass_management (outPath,
+                                         outName,
+                                         "POLYLINE",
+                                         spatial_reference = sr)
+    with arcpy.da.InsertCursor (outFc, "SHAPE@") as iCurs:
+        with arcpy.da.SearchCursor (inFc, "SHAPE@") as sCurs:
+            for geom, in sCurs:
+                for i in range (geom.partCount):
+                    lastPart = None
+                    part = geom.getPart (i)
+                    for pnt in part:
+                        if not pnt:
+                            lastPart = None
+                            continue
+                        x = pnt.X
+                        y = pnt.Y
+                        if not lastPart:
+                            lastPart = (x, y)
+                            continue
+                        thisPart = (x, y)
+                        lastPoint = arcpy.Point ()
+                        lastPoint.X = lastPart [0]
+                        lastPoint.Y = lastPart [1]
+                        thisPoint = arcpy.Point ()
+                        thisPoint.X = thisPart [0]
+                        thisPoint.Y = thisPart [1]
+                        array.add (lastPoint)
+                        array.add (thisPoint)
+                        polyline = arcpy.Polyline (array)
+                        array.removeAll ()
+                        lastPart = thisPart
+                        row = (polyline,)
+                        iCurs.insertRow (row)
+    del iCurs
+    del sCurs
+    return outFc
+
+
+#feature vertices to points
+def VerticesToPoints (inFc, workspace, fcName):
+
+    outFc = UniqueFileName(workspace, fcName)
+    try:
+        #let esri do it (advanced license)
+        arcpy.FeatureVerticesToPoints_management (inFc, outFc)
+        return outFc
+    except:
+        pass
+    #no advanced license
+    sr = arcpy.Describe (inFc).spatialReference
+    outPath, outName = os.path.split (outFc)
+    arcpy.CreateFeatureclass_management (outPath,
+                                         outName,
+                                         "POINT",
+                                         spatial_reference = sr)
+    with arcpy.da.InsertCursor (outFc, "SHAPE@") as iCurs:
+        with arcpy.da.SearchCursor (inFc, "SHAPE@") as sCurs:
+            for geom, in sCurs:
+                for i in range (geom.partCount):
+                    part = geom.getPart (i)
+                    for pnt in part:
+                        if not pnt:
+                            continue
+                        row = (pnt,)
+                        iCurs.insertRow (row)
+    del iCurs
+    del sCurs
+    return outFc
+
+
+#generate a unique ArcGIS file name
+def UniqueFileName(location = "in_memory",
+                   name = "file",
+                   extension = ""):
+    
+    if extension:
+        outName = os.path.join (location, name + "." + extension)
+    else:
+        outName = os.path.join (location, name)
+    i = 0
+    while arcpy.Exists (outName):
+        i += 1
+        if extension:
+            outName = os.path.join (location,
+                                    "{0}_{1}.{2}".format (name, i,
+                                                          extension))
+        else:
+            outName = os.path.join (location,
+                                    "{0}_{1}".format (name, i))
+    return outName
